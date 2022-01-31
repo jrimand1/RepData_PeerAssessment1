@@ -1,0 +1,158 @@
+---
+title: 'Reproducible Research Week 2, Project 1: Exploratory Analysis of Personal
+  Monitoring Data'
+author: "Joseph Rimando"
+date: "1/30/2022"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, echo=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(dev="png")
+```
+
+# Load and preprocess the data: convert the date character strings into date format
+
+```{r}
+activity<-read.csv("activity.csv")
+library(lubridate,quietly = TRUE)
+activity$date<-ymd(activity$date)
+```
+
+# What is the mean total number of steps taken per day?
+
+### Make a histogram of the total number of steps taken each day
+
+```{r, dpi=36, out.width="900px", out.height="600px"}
+activity$totalsteps_day<-ave(activity$steps,
+        activity$date, FUN = sum, na.rm=TRUE)
+hist(activity$totalsteps_day, main="Histogram of Total
+     Steps Per Day", xlab = "Total Steps per Day")
+```
+
+### Calculate and report the mean (10766.19) and median (10765) total number of steps taken per day.
+
+```{r}
+mean(activity$totalsteps_day, na.rm = TRUE)
+median(activity$totalsteps_day, na.rm = TRUE)
+```
+
+# What is the average daily activity pattern?
+
+### Make a time series plot (i.e. type = "l") of the 5-minute interval (x-axis) and the average number of steps taken, averaged across all days (y-axis)
+
+#### Calculate the average number steps taken for each 5-minute interval and create a new column in database
+
+```{r}
+library(tidyverse, quietly = TRUE)
+activity$interval<-as.factor(activity$interval)
+avgsteps_interval<-tapply(activity$steps,activity$interval, mean, na.rm=TRUE)
+avgsteps_interval<-as.data.frame(avgsteps_interval)
+avgsteps_interval<-avgsteps_interval %>% rownames_to_column(var="interval")
+activity_asi<-inner_join(activity,avgsteps_interval,by="interval")
+```
+
+#### Plot the data
+
+```{r, dpi=36, out.width="900px", out.height="600px"}
+plot(activity_asi$interval, activity_asi$avgsteps_interval, type="l", main = "Average Number of 
+     Steps Taken Per Interval",
+     xlab = "5-Minute Time Interval", ylab = "Average Number of Steps")
+```
+
+### Which 5-minute interval, on average across all the days in the dataset, contains the maximum number of steps? (835)
+
+```{r}
+activity_asi_max<-activity_asi %>% filter(avgsteps_interval==max(activity_asi$avgsteps_interval))
+activity_asi_max$interval
+```
+
+# Imputing missing values: Note that there are a number of days/intervals where ther are missing values (coded as NA). The presence of missing days may introduce bias into some calculations or summaries of the data.
+
+### Calculate and report the total number of missing values in the dataset(i.e. the total number of rows with NAs).
+
+```{r}
+activity_noNA<-activity %>% filter(is.na(steps))
+nrow(activity_noNA)
+```
+
+### Devise a strategy for filling in all of the missing values in the dataset. I will replace NA values with the mean for that 5-minute interval.
+
+### Create a new dataset that is equal to the original dataset but with the missing data filled in.
+
+```{r}
+activity_asi_imputed<-activity_asi
+activity_asi_imputed$steps<-     
+        coalesce(activity_asi_imputed$steps,
+        activity_asi_imputed$avgsteps_interval)
+```
+
+### Make a histogram of the total number of steps taken each day.
+
+#### Recalculate total number of steps taken per day and add it to the dataframe.
+
+```{r}
+activity_asi_imputed<-activity_asi_imputed[,-4]
+activity_asi_imputed$totalsteps_day<-
+        ave(activity_asi_imputed$steps,
+        activity_asi_imputed$date, FUN = sum)
+```
+
+#### Plot the histogram with the imputed data
+
+```{r, dpi=36, out.width="900px", out.height="600px"}
+hist(activity_asi_imputed$totalsteps_day, 
+        main="Histogram of Total
+        Steps Per Day (Imputed)", 
+        xlab = "Total Steps per Day")
+```
+
+### Cacluate and report the mean (10766.19) and median (10766.19) total number of steps taken per day.
+
+```{r}
+mean(activity_asi_imputed$totalsteps_day)
+median(activity_asi_imputed$totalsteps_day)
+```
+
+### Do these values differ from the estimates from the first part of the assignment? They do not significantly differ.
+
+### What is the impact of imputing missing data on the estimates of the total daily number of steps? There is no meaningful impact.
+
+# Are these differences in activity patterns between weekdays and weekends? For this part, the weekdays() function may be of some help here. Use the dataset with the filled-in missing values for this part.
+
+### Create a new factor variable in the dataset with two levels - "weekday" and "weekend" indicating wheter the date is a weekday or weekend day.
+
+```{r}
+activity_asi_imputed<-activity_asi_imputed %>% mutate(dotw = weekdays(date))
+weekday<-c("Monday", "Tuesday", "Wednesday", "Thursday", "Friday")
+weekend<-c("Saturday", "Sunday")
+weekday_vector<-which(activity_asi_imputed$dotw %in% weekday)
+activity_asi_imputed$daytype[weekday_vector]<-"Weekday"
+weekend_vector<-which(activity_asi_imputed$dotw %in% weekend)
+activity_asi_imputed$daytype[weekend_vector]<-"Weekend"
+activity_asi_imputed$daytype<-as.factor(activity_asi_imputed$daytype)
+```
+
+### Make a panel plot containing a time series plot (i.e. type = "l") of the 5-minute interval (x-axis) and the average number of steps taken, averaged across all weekday days or weekend days (y-axis). 
+
+#### First, calcluate average steps per interval for weekdays versus weekends
+
+```{r}
+activity_asi_imputed$avgsteps_interval_daytype[weekday_vector]<-
+        ave(activity_asi_imputed$steps[weekday_vector],
+        activity_asi_imputed$interval)
+activity_asi_imputed$avgsteps_interval_daytype[weekend_vector]<-
+        ave(activity_asi_imputed$steps[weekend_vector],
+        activity_asi_imputed$interval)
+```
+
+#### Make the panel plot
+
+```{r, dpi=36, out.width="900px", out.height="600px"}
+activity_asi_imputed$interval<-as.numeric(activity_asi_imputed$interval)
+ggplot(data=activity_asi_imputed, aes(interval, avgsteps_interval_daytype)) + geom_line() +
+        facet_grid(daytype~.) + ggtitle("Average Steps Taken Per 5-Minute Interval")
+```
+
